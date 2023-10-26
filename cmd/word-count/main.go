@@ -188,8 +188,23 @@ func main() {
 		wordBankUrl      = fs.String("word_bank_url", "https://raw.githubusercontent.com/dwyl/english-words/master/words.txt", "Word bank URL")
 		essaysPath       = fs.String("essays_path", "./resources/endg-urls-copy.txt", "Path to essays")
 		concurrencyLimit = fs.Int("concurrency_limit", 50, "Concurrency limit")
-		numConsumers     = fs.Int("num_consumers", 1000, "Number of consumers")
+		numConsumers     = fs.Int("num_consumers", 100, "Number of consumers")
 	)
+
+	if *timeout > *globalTimeout {
+		fmt.Println("Timeout cannot be greater than global timeout")
+		return
+	}
+
+	if *concurrencyLimit > *numConsumers {
+		fmt.Println("Concurrency limit cannot be greater than number of consumers")
+		return
+	}
+
+	if *numConsumers > 100 {
+		fmt.Println("Number of consumers cannot be greater than 1000")
+		return
+	}
 
 	httpTransport := &http.Transport{
 		//IdleConnTimeout is the maximum amount of time an idle (keep-alive) connection will remain idle before closing itself.
@@ -262,8 +277,6 @@ func main() {
 	// Wait for all consumers to finish
 	wg.Wait()
 
-	fmt.Println("Time taken to process all URLs:", time.Since(startTime))
-
 	// Print the top 10 most used words in order from shared counter
 	mostUsedWords := sharedCounter.sortByCount(sharedCounter.Counter)
 
@@ -276,5 +289,6 @@ func main() {
 
 	// Print the pretty JSON string
 	fmt.Println(string(prettyJSON))
-	fmt.Println("Errors:", sharedCounter.ErrorReporter)
+	// fmt.Println("Errors:", sharedCounter.ErrorReporter)
+	fmt.Println("Time taken to process all URLs:", time.Since(startTime))
 }
