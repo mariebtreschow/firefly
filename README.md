@@ -13,8 +13,29 @@ Output is in pretty json and written to the stdout.
 
 ## Build a Docker image and run from the command line
 
-Please see Makefile for available commands 
+Please see Makefile for build command
+    `make docker-build`
 
+## How to run locally
+
+ install dependencies
+    `go mod download`
+
+ run locally with default flags on test data
+    `go run cmd/word-count/main.go`
+
+## How to run the docker
+
+`docker run -e TIMEOUT=60 -e GLOABL_TIMEOUT=120 -e CONCURRENCY_LIMIT=50 -e NUM_CONSUMERS=1000 -d wordcounter`
+
+optional flags:
+
+- timeout
+- global_timeout
+- word_bank_url
+- essays_path
+- concurrency_limit
+- num_consumers
 
 ## Challenges of this application
 

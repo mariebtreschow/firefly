@@ -68,12 +68,11 @@ func (W *WordCounter) LoadBankWord(url string) (map[string]bool, error) {
 	if err != nil {
 		return nil, err
 	}
-	// close the body when we are done
 	defer resp.Body.Close()
 
 	words := make(map[string]bool) // Initialize the map
 
-	// using bufio to simply and efficiently read through the list of words
+	// Using bufio to simply and efficiently read through the list of words
 	scanner := bufio.NewScanner(resp.Body)
 	for scanner.Scan() {
 
@@ -91,7 +90,7 @@ func (W *WordCounter) LoadBankWord(url string) (map[string]bool, error) {
 	return words, nil
 }
 
-// sort the list of words by the count
+// Sort the list of words by the count
 func (W *WordCounter) sortByCount(m map[string]int) []WordCount {
 	var sorted []WordCount
 	for key, value := range m {
@@ -117,12 +116,9 @@ func (W *WordCounter) sortByCount(m map[string]int) []WordCount {
 
 func (W *WordCounter) CountWordsFromURL(ctx context.Context, url string) error {
 	fmt.Println("Counting words from URL:", url)
-
-	// request with context
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
-		// handle error
-		return err
+		return fmt.Errorf("error creating request for url %s: %w", url, err)
 	}
 
 	reqCtx, cancel := context.WithTimeout(ctx, W.Client.Timeout)
@@ -131,8 +127,7 @@ func (W *WordCounter) CountWordsFromURL(ctx context.Context, url string) error {
 
 	resp, err := W.Client.Do(req)
 	if err != nil {
-		fmt.Println("Error:", err)
-		return err
+		return fmt.Errorf("error getting response from url %s: %w", url, err)
 	}
 	defer resp.Body.Close()
 
@@ -185,40 +180,34 @@ func consumer(ctx context.Context, queue <-chan string, wg *sync.WaitGroup, shar
 
 func main() {
 
-	var timeout time.Duration
-	var globalTimeout time.Duration
-	var wordBankUrl string
-	var essaysPath string
-	var concurrencyLimit int
-	var numConsumers int
-	// var retries int
+	fs := flag.NewFlagSet("wordcounter", flag.ExitOnError)
 
-	flag.IntVar(&numConsumers, "numConsumers", 20, "Number of consumers")
-	// flag.IntVar(&retries, "retries", 3, "Number of retries")
-	flag.DurationVar(&timeout, "timeout", 90*time.Second, "HTTP client timeout")
-	flag.DurationVar(&globalTimeout, "globalTimeout", 120*time.Second, "Global context timeout")
-	flag.StringVar(&wordBankUrl, "wordBankUrl", "https://raw.githubusercontent.com/dwyl/english-words/master/words.txt", "Word bank URL")
-	flag.StringVar(&essaysPath, "essaysPath", "./resources/endg-urls-copy.txt", "Path to essays")
-	flag.IntVar(&concurrencyLimit, "concurrencyLimit", 50, "Concurrency limit")
-	flag.Parse()
+	var (
+		timeout          = fs.Duration("timeout", 90*time.Second, "HTTP client timeout")
+		globalTimeout    = fs.Duration("global_timeout", 120*time.Second, "Global context timeout")
+		wordBankUrl      = fs.String("word_bank_url", "https://raw.githubusercontent.com/dwyl/english-words/master/words.txt", "Word bank URL")
+		essaysPath       = fs.String("essays_path", "./resources/endg-urls-copy.txt", "Path to essays")
+		concurrencyLimit = fs.Int("concurrency_limit", 50, "Concurrency limit")
+		numConsumers     = fs.Int("num_consumers", 1000, "Number of consumers")
+	)
 
 	httpTransport := &http.Transport{
-		//IdleConnTimeout is the maximum amount of time an idle (keep-alive) connection will remain idle before closing itself. Zero means no limit.
-		IdleConnTimeout:       globalTimeout,
-		ResponseHeaderTimeout: timeout,
-		MaxIdleConnsPerHost:   concurrencyLimit,
+		//IdleConnTimeout is the maximum amount of time an idle (keep-alive) connection will remain idle before closing itself.
+		IdleConnTimeout:       *globalTimeout,
+		ResponseHeaderTimeout: *timeout,
+		MaxIdleConnsPerHost:   *concurrencyLimit,
 	}
 
 	// Upgrade it to HTTP/2
 	http2.ConfigureTransport(httpTransport)
 
-	sharedCounter := NewWordCounter(concurrencyLimit, &http.Client{
+	sharedCounter := NewWordCounter(*concurrencyLimit, &http.Client{
 		Transport: httpTransport,
-		Timeout:   timeout,
+		Timeout:   *timeout,
 	})
 
 	// Load bank words from url, and store in memory
-	bankOfWords, err := sharedCounter.LoadBankWord(wordBankUrl)
+	bankOfWords, err := sharedCounter.LoadBankWord(*wordBankUrl)
 	if err != nil {
 		fmt.Println("Error loading words:", err)
 		return
@@ -231,7 +220,7 @@ func main() {
 	sharedCounter.WordBank = bankOfWords
 
 	// Open the file and push the messages to the consumers
-	file, err := os.Open(essaysPath)
+	file, err := os.Open(*essaysPath)
 	if err != nil {
 		fmt.Printf("Error opening file %v", err)
 		return
@@ -258,14 +247,14 @@ func main() {
 	// Producer pushes URLs into the queue
 	go producer(queue, urls)
 
-	ctx, cancel := context.WithTimeout(context.Background(), globalTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), *globalTimeout)
 	defer cancel()
 
 	startTime := time.Now()
 	fmt.Println("Start time for creating consumers:", startTime)
 
 	// Spin up multiple consumers
-	for i := 0; i < numConsumers; i++ {
+	for i := 0; i < *numConsumers; i++ {
 		wg.Add(1)
 		go consumer(ctx, queue, &wg, sharedCounter)
 	}
