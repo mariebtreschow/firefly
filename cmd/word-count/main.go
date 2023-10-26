@@ -1,233 +1,291 @@
 package main
 
-// import (
-// 	"bufio"
-// 	"context"
-// 	"flag"
-// 	"fmt"
-// 	"io"
-// 	"net/http"
-// 	"os"
-// 	"sort"
-// 	"strings"
-// 	"sync"
-// 	"time"
-// 	"unicode"
-// )
+import (
+	"bufio"
+	"context"
+	"encoding/json"
+	"flag"
+	"fmt"
+	"io"
+	"net/http"
+	"os"
+	"sort"
+	"strings"
+	"sync"
+	"time"
+	"unicode"
 
-// type WordCounter struct {
-// 	Sync             *sync.Mutex
-// 	Client           *http.Client
-// 	Counter          map[string]int
-// 	WordBank         map[string]bool
-// 	ConcurrencyLimit int
-// }
+	"golang.org/x/net/http2"
+)
 
-// type WordCount struct {
-// 	Word  string
-// 	Count int
-// }
+type ErrorReporter struct {
+	url string
+	Err error
+}
 
-// func NewWordCounter(concurrencyLimit int, httpClient *http.Client) *WordCounter {
-// 	return &WordCounter{
-// 		Sync:             &sync.Mutex{},
-// 		Client:           httpClient,
-// 		Counter:          make(map[string]int),
-// 		WordBank:         make(map[string]bool),
-// 		ConcurrencyLimit: concurrencyLimit,
-// 	}
-// }
+type WordCounter struct {
+	Sync             *sync.Mutex
+	Client           *http.Client
+	Counter          map[string]int
+	WordBank         map[string]bool
+	ErrorReporter    []ErrorReporter
+	ConcurrencyLimit int
+}
 
-// func (W *WordCounter) isValidWord(word string) bool {
-// 	return len(word) >= 3 && isAlphabetic(word)
-// }
+type WordCount struct {
+	Word  string
+	Count int
+}
 
-// func isAlphabetic(s string) bool {
-// 	for _, char := range s {
-// 		if !unicode.IsLetter(char) {
-// 			return false
-// 		}
-// 	}
-// 	return true
-// }
+func NewWordCounter(concurrencyLimit int, httpClient *http.Client) *WordCounter {
+	return &WordCounter{
+		Sync:             &sync.Mutex{},
+		Client:           httpClient,
+		Counter:          make(map[string]int),
+		WordBank:         make(map[string]bool),
+		ConcurrencyLimit: concurrencyLimit,
+	}
+}
 
-// // we want to load it every time the program starts: because we do not know if it has changed
-// // TODO: make alternative where we cache the words
-// func (W *WordCounter) LoadBankWord(url string) (map[string]bool, error) {
-// 	fmt.Println("Loading words from url", url)
-// 	resp, err := W.Client.Get(url)
-// 	if err != nil {
-// 		return nil, err
-// 	}
-// 	// close the body when we are done
-// 	defer resp.Body.Close()
+func (W *WordCounter) isValidWord(word string) bool {
+	return len(word) >= 3 && isAlphabetic(word)
+}
 
-// 	words := make(map[string]bool) // Initialize the map
+func isAlphabetic(s string) bool {
+	for _, char := range s {
+		if !unicode.IsLetter(char) {
+			return false
+		}
+	}
+	return true
+}
 
-// 	// using bufio to simply and efficiently read through the list of words
-// 	scanner := bufio.NewScanner(resp.Body)
-// 	for scanner.Scan() {
+// we want to load it every time the program starts: because we do not know if it has changed
+// TODO: make alternative where we cache the words
+func (W *WordCounter) LoadBankWord(url string) (map[string]bool, error) {
+	fmt.Println("Loading words from url", url)
+	resp, err := W.Client.Get(url)
+	if err != nil {
+		return nil, err
+	}
+	// close the body when we are done
+	defer resp.Body.Close()
 
-// 		if W.isValidWord(scanner.Text()) {
-// 			if words[scanner.Text()] {
-// 				continue
-// 			}
-// 			words[scanner.Text()] = true
-// 		}
-// 	}
-// 	if err := scanner.Err(); err != nil {
-// 		return nil, err
-// 	}
+	words := make(map[string]bool) // Initialize the map
 
-// 	return words, nil
-// }
+	// using bufio to simply and efficiently read through the list of words
+	scanner := bufio.NewScanner(resp.Body)
+	for scanner.Scan() {
 
-// // sort the list of words by the count
-// func (W *WordCounter) sortByCount(m map[string]int) []WordCount {
-// 	var sorted []WordCount
-// 	for key, value := range m {
-// 		sorted = append(sorted, WordCount{key, value})
-// 	}
+		if W.isValidWord(scanner.Text()) {
+			if words[strings.ToLower(scanner.Text())] {
+				continue
+			}
+			words[strings.ToLower(scanner.Text())] = true
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, err
+	}
 
-// 	sort.Slice(sorted, func(i, j int) bool {
-// 		return sorted[i].Count > sorted[j].Count
-// 	})
-// 	return sorted
+	return words, nil
+}
 
-// }
+// sort the list of words by the count
+func (W *WordCounter) sortByCount(m map[string]int) []WordCount {
+	var sorted []WordCount
+	for key, value := range m {
+		sorted = append(sorted, WordCount{key, value})
+	}
 
-// func (W *WordCounter) CountWordsFromURL(ctx context.Context, url string) error {
-// 	fmt.Println("Counting words from URL:", url)
+	sort.Slice(sorted, func(i, j int) bool {
+		return sorted[i].Count > sorted[j].Count
+	})
 
-// 	// request with context
-// 	req, err := http.NewRequest("GET", url, nil)
-// 	if err != nil {
-// 		// handle error
-// 		return err
-// 	}
+	var topWords []WordCount
+	count := 0
+	for _, v := range sorted {
+		topWords = append(topWords, v)
+		if count >= 10 {
+			break
+		}
+		count++
+	}
+	return topWords
 
-// 	reqCtx, cancel := context.WithTimeout(ctx, W.Client.Timeout)
-// 	defer cancel()
-// 	req = req.WithContext(reqCtx)
+}
 
-// 	resp, err := W.Client.Do(req)
-// 	if err != nil {
-// 		fmt.Println("Error:", err)
-// 		return err
-// 	}
-// 	defer resp.Body.Close()
+func (W *WordCounter) CountWordsFromURL(ctx context.Context, url string) error {
+	fmt.Println("Counting words from URL:", url)
 
-// 	body, err := io.ReadAll(resp.Body)
-// 	if err != nil {
-// 		fmt.Println("Error:", err)
-// 		return err
-// 	}
+	// request with context
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		// handle error
+		return err
+	}
 
-// 	localCounter := make(map[string]int)
-// 	for _, word := range strings.Fields(string(body)) {
-// 		if W.isValidWord(word) && W.WordBank[word] {
-// 			localCounter[word]++
-// 		}
-// 	}
+	reqCtx, cancel := context.WithTimeout(ctx, W.Client.Timeout)
+	defer cancel()
+	req = req.WithContext(reqCtx)
 
-// 	W.Sync.Lock()
-// 	for word, count := range localCounter {
-// 		W.Counter[word] += count
-// 	}
-// 	W.Sync.Unlock()
+	resp, err := W.Client.Do(req)
+	if err != nil {
+		fmt.Println("Error:", err)
+		return err
+	}
+	defer resp.Body.Close()
 
-// 	return nil
-// }
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		fmt.Println("Error:", err)
+		return err
+	}
 
-// func main() {
+	// TODO: make this faster by using binary search
+	localCounter := make(map[string]int)
+	for _, word := range strings.Fields(string(body)) {
+		w := strings.ToLower(word)
+		if W.isValidWord(w) && W.WordBank[w] {
+			localCounter[w]++
+		}
+	}
 
-// 	var timeout time.Duration
-// 	var globalTimeout time.Duration
-// 	var wordBankUrl string
-// 	var essaysPath string
-// 	var concurrencyLimit int
-// 	var retries int
+	W.Sync.Lock()
+	for word, count := range localCounter {
+		W.Counter[word] += count
+	}
+	W.Sync.Unlock()
 
-// 	flag.IntVar(&retries, "retries", 3, "Number of retries")
-// 	flag.DurationVar(&timeout, "timeout", 60*time.Second, "HTTP client timeout")
-// 	flag.DurationVar(&globalTimeout, "globalTimeout", 120*time.Second, "Global context timeout")
-// 	flag.StringVar(&wordBankUrl, "wordBankUrl", "https://raw.githubusercontent.com/dwyl/english-words/master/words.txt", "Word bank URL")
-// 	flag.StringVar(&essaysPath, "essaysPath", "./resources/endg-urls-copy.txt", "Path to essays")
-// 	flag.IntVar(&concurrencyLimit, "concurrencyLimit", 50, "Concurrency limit")
-// 	flag.Parse()
+	return nil
+}
 
-// 	w := NewWordCounter(concurrencyLimit, &http.Client{
-// 		Timeout: timeout,
-// 	})
+// Producer
+func producer(queue chan<- string, urls []string) {
+	for _, url := range urls {
+		queue <- url
+	}
+	close(queue)
+}
 
-// 	// 1. load bank words from url, and store in memory
-// 	bankOfWords, err := w.LoadBankWord(wordBankUrl)
-// 	if err != nil {
-// 		fmt.Println("Error loading words:", err)
-// 		return
-// 	}
+// Consumer
+func consumer(ctx context.Context, queue <-chan string, wg *sync.WaitGroup, sharedCounter *WordCounter) {
+	for url := range queue {
+		// Word count logic
+		err := sharedCounter.CountWordsFromURL(ctx, url)
+		if err != nil {
+			// add to error reporter
+			sharedCounter.ErrorReporter = append(sharedCounter.ErrorReporter, ErrorReporter{url, err})
+			fmt.Println("Error counting words:", err)
+			continue
+		}
+	}
+	wg.Done()
+}
 
-// 	if len(bankOfWords) == 0 {
-// 		fmt.Println("Error: no words found")
-// 		return
-// 	}
-// 	w.WordBank = bankOfWords
+func main() {
 
-// 	// 2. load essays from text file and count all the valid words
-// 	ctx, cancel := context.WithTimeout(context.Background(), globalTimeout)
-// 	defer cancel()
+	var timeout time.Duration
+	var globalTimeout time.Duration
+	var wordBankUrl string
+	var essaysPath string
+	var concurrencyLimit int
+	var numConsumers int
+	// var retries int
 
-// 	// Define a buffered channel and a worker pool
-// 	workChannel := make(chan string, concurrencyLimit)
-// 	var wg sync.WaitGroup
+	flag.IntVar(&numConsumers, "numConsumers", 20, "Number of consumers")
+	// flag.IntVar(&retries, "retries", 3, "Number of retries")
+	flag.DurationVar(&timeout, "timeout", 90*time.Second, "HTTP client timeout")
+	flag.DurationVar(&globalTimeout, "globalTimeout", 120*time.Second, "Global context timeout")
+	flag.StringVar(&wordBankUrl, "wordBankUrl", "https://raw.githubusercontent.com/dwyl/english-words/master/words.txt", "Word bank URL")
+	flag.StringVar(&essaysPath, "essaysPath", "./resources/endg-urls-copy.txt", "Path to essays")
+	flag.IntVar(&concurrencyLimit, "concurrencyLimit", 50, "Concurrency limit")
+	flag.Parse()
 
-// 	for i := 0; i < concurrencyLimit; i++ {
-// 		wg.Add(1)
-// 		go func() {
-// 			defer wg.Done()
-// 			for url := range workChannel {
+	httpTransport := &http.Transport{
+		//IdleConnTimeout is the maximum amount of time an idle (keep-alive) connection will remain idle before closing itself. Zero means no limit.
+		IdleConnTimeout:       globalTimeout,
+		ResponseHeaderTimeout: timeout,
+		MaxIdleConnsPerHost:   concurrencyLimit,
+	}
 
-// 				for i := 0; i < retries; i++ {
-// 					err := w.CountWordsFromURL(ctx, url)
-// 					if err == nil {
-// 						break
-// 					}
-// 					fmt.Println("Retrying to count words from URL:", err)
-// 					time.Sleep(time.Second * 2) // Sleep for 2 seconds before retryin
-// 				}
+	// Upgrade it to HTTP/2
+	http2.ConfigureTransport(httpTransport)
 
-// 			}
-// 		}()
-// 	}
+	sharedCounter := NewWordCounter(concurrencyLimit, &http.Client{
+		Transport: httpTransport,
+		Timeout:   timeout,
+	})
 
-// 	// Open the file and feed the URLs to the work channel
-// 	file, err := os.Open(essaysPath)
-// 	if err != nil {
-// 		fmt.Printf("Error opening file %v", err)
-// 		return
-// 	}
-// 	defer file.Close()
+	// Load bank words from url, and store in memory
+	bankOfWords, err := sharedCounter.LoadBankWord(wordBankUrl)
+	if err != nil {
+		fmt.Println("Error loading words:", err)
+		return
+	}
 
-// 	reader := bufio.NewReader(file)
-// 	for {
-// 		line, err := reader.ReadString('\n')
-// 		if err != nil {
-// 			break
-// 		}
-// 		workChannel <- strings.TrimSpace(line)
-// 	}
-// 	close(workChannel)
-// 	wg.Wait()
+	if len(bankOfWords) == 0 {
+		fmt.Println("Error: no words found")
+		return
+	}
+	sharedCounter.WordBank = bankOfWords
 
-// 	// 3. print the top 10 most used words in order
-// 	sortedKeys := w.sortByCount(w.Counter)
-// 	count := 0
-// 	for _, v := range sortedKeys {
-// 		if count >= 10 {
-// 			break
-// 		}
-// 		fmt.Printf("%s: %d\n", v.Word, v.Count)
-// 		count++
-// 	}
+	// Open the file and push the messages to the consumers
+	file, err := os.Open(essaysPath)
+	if err != nil {
+		fmt.Printf("Error opening file %v", err)
+		return
+	}
+	defer file.Close()
 
-// }
+	reader := bufio.NewReader(file)
+	urls := []string{}
+	for {
+		line, err := reader.ReadString('\n')
+		if err != nil {
+			break
+		}
+		urls = append(urls, strings.TrimSpace(line))
+	}
+
+	// Initialize queue and wait group
+	fmt.Println("Number of urls:", len(urls))
+	// Since the channel is buffered, the producer can put all the URLs into the channel without waiting
+	// for a consumer to be ready to take one. This ensures that the producer doesn't get blocked.
+	queue := make(chan string, len(urls))
+	var wg sync.WaitGroup
+
+	// Producer pushes URLs into the queue
+	go producer(queue, urls)
+
+	ctx, cancel := context.WithTimeout(context.Background(), globalTimeout)
+	defer cancel()
+
+	startTime := time.Now()
+	fmt.Println("Start time for creating consumers:", startTime)
+
+	// Spin up multiple consumers
+	for i := 0; i < numConsumers; i++ {
+		wg.Add(1)
+		go consumer(ctx, queue, &wg, sharedCounter)
+	}
+
+	// Wait for all consumers to finish
+	wg.Wait()
+
+	fmt.Println("Time taken to process all URLs:", time.Since(startTime))
+
+	// Print the top 10 most used words in order from shared counter
+	mostUsedWords := sharedCounter.sortByCount(sharedCounter.Counter)
+
+	// Convert the array of maps to a pretty JSON string
+	prettyJSON, err := json.MarshalIndent(mostUsedWords, "", "  ")
+	if err != nil {
+		fmt.Println("Failed to generate json", err)
+		return
+	}
+
+	// Print the pretty JSON string
+	fmt.Println(string(prettyJSON))
+	fmt.Println("Errors:", sharedCounter.ErrorReporter)
+}
