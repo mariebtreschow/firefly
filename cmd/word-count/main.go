@@ -189,23 +189,23 @@ func consumer(ctx context.Context, queue <-chan string, wg *sync.WaitGroup, shar
 		// Word count logic
 		err := sharedCounter.CountWordsFromURL(ctx, url)
 		if err != nil {
-			//  TODO: improve error handling
-			if err == context.DeadlineExceeded {
-				fmt.Println("context deadline exceeded")
-				wg.Done()
-				return
-			}
-			if err.Error() == "error response status code 999" {
-				fmt.Println("overloading the domain")
-				wg.Done()
-				return
-			}
 			// Add to error reporter
 			// TODO: add functionality to put on a deadletter queue
 			sharedCounter.Sync.Lock() // Locking the mutex
 			sharedCounter.ErrorReporter = append(sharedCounter.ErrorReporter, ErrorReporter{url, err})
 			sharedCounter.Sync.Unlock() // Unlocking the mutex
-			fmt.Println("Error counting words:", err)
+			fmt.Println("error counting words:", err)
+			//  TODO: improve error handling
+			if err == context.DeadlineExceeded {
+				fmt.Println("context deadline exceeded, try increasing the timeout")
+				return
+			}
+			if err.Error() == "error response status code 999" {
+				fmt.Println("overloading the domain")
+				os.Exit(1)
+				return
+			}
+
 		}
 
 		// TODO: add a rate limiter instead
@@ -230,8 +230,8 @@ func main() {
 		globalTimeout    = fs.Duration("global_timeout", 500*time.Second, "Global context timeout for operation of all processing URLs")
 		wordBankUrl      = fs.String("word_bank_url", "https://raw.githubusercontent.com/dwyl/english-words/master/words.txt", "Word bank URL")
 		essaysPath       = fs.String("essays_path", "./resources/endg-urls-copy.txt", "Path to essays")
-		concurrencyLimit = fs.Int("concurrency_limit", 50, "Concurrency limit")
-		numConsumers     = fs.Int("num_consumers", 40, "Number of consumers")
+		concurrencyLimit = fs.Int("concurrency_limit", 20, "Concurrency limit")
+		numConsumers     = fs.Int("num_consumers", 20, "Number of consumers")
 		errorReporter    = fs.Bool("error_reporting", false, "Display errors in the end")
 		essaySplit       = fs.Int("eassays_split", 2000, "After processing 2000 essays wait for a bit")
 	)
