@@ -19,7 +19,6 @@ RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o main ./cmd/word-c
 # Use a minimal alpine image for the final stage
 FROM alpine:3.18.4
 
-
 # Copy only the compiled go binary from the build stage
 COPY --from=builder /go/src/firefly.ai/word-count/main .
 

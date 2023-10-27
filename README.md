@@ -27,18 +27,23 @@ Run locally with default flags
 
 `go run cmd/word-count/main.go`
 
-## How to run the docker
-
-`docker run -e TIMEOUT=60 -e GLOABL_TIMEOUT=120 -e CONCURRENCY_LIMIT=40 -e NUM_CONSUMERS=10 -d wordcounter`
-
-optional flags:
-
+run  with optional flags:
 - timeout
 - global_timeout
 - word_bank_url
 - essays_path
 - concurrency_limit
 - num_consumers
+
+If you wanna run with these flags easiest is to update the .env file 
+and include it when you run command can be found in Makefile.
+
+`make wordcounter`
+
+## How to run the docker
+
+`docker run wordcounter:1.0.0`
+
 
 ## Run tests
 

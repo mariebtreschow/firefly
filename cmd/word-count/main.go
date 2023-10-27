@@ -16,6 +16,7 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/peterbourgon/ff"
 	"golang.org/x/net/http2"
 )
 
@@ -179,7 +180,7 @@ var globalCounter int
 var globalCounterMutex sync.Mutex
 
 // Consumer
-func consumer(ctx context.Context, queue <-chan string, wg *sync.WaitGroup, sharedCounter *WordCounter) {
+func consumer(ctx context.Context, queue <-chan string, wg *sync.WaitGroup, sharedCounter *WordCounter, split int) {
 	for url := range queue {
 		// Word count logic
 		err := sharedCounter.CountWordsFromURL(ctx, url)
@@ -194,8 +195,8 @@ func consumer(ctx context.Context, queue <-chan string, wg *sync.WaitGroup, shar
 		// Ensures that the global counter variable is accessed by one goroutine at a time, making it thread-safe.
 		globalCounterMutex.Lock()
 		globalCounter++
-		if globalCounter >= 2000 {
-			time.Sleep(20 * time.Second) // Pause
+		if globalCounter >= split {
+			time.Sleep(60 * time.Second) // Pause TODO: make this configurable
 			globalCounter = 0            // Reset the counter
 		}
 		globalCounterMutex.Unlock()
@@ -207,17 +208,22 @@ func main() {
 
 	fs := flag.NewFlagSet("wordcounter", flag.ExitOnError)
 
-	fs.Parse(os.Args[1:])
-
 	var (
 		timeout          = fs.Duration("timeout", 120*time.Second, "HTTP client timeout")
-		globalTimeout    = fs.Duration("global_timeout", 10*time.Minute, "Global context timeout for operation of all processing URLs")
+		globalTimeout    = fs.Duration("global_timeout", 500*time.Second, "Global context timeout for operation of all processing URLs")
 		wordBankUrl      = fs.String("word_bank_url", "https://raw.githubusercontent.com/dwyl/english-words/master/words.txt", "Word bank URL")
-		essaysPath       = fs.String("essays_path", "./resources/endg-urls.txt", "Path to essays")
+		essaysPath       = fs.String("essays_path", "./resources/endg-urls-copy.txt", "Path to essays")
 		concurrencyLimit = fs.Int("concurrency_limit", 40, "Concurrency limit")
 		numConsumers     = fs.Int("num_consumers", 20, "Number of consumers")
 		errorReporter    = fs.Bool("error_reporting", false, "Display errors in the end")
+		essaySplit       = fs.Int("eassays_split", 2000, "After processing 2000 essays wait for a bit")
 	)
+
+	err := ff.Parse(fs, os.Args[1:], ff.WithEnvVarPrefix("wordcounter"))
+	if err != nil {
+		fmt.Println("error occurent when parsing env vars")
+		return
+	}
 
 	if *timeout > *globalTimeout {
 		fmt.Println("timeout cannot be greater than global timeout")
@@ -277,7 +283,7 @@ func main() {
 	}
 
 	// Initialize queue and wait group
-	fmt.Println("Number of urls:", len(urls))
+	fmt.Println("number of urls:", len(urls))
 	// Since the channel is buffered, the producer can put all the URLs into the channel without waiting
 	// for a consumer to be ready to take one. This ensures that the producer doesn't get blocked.
 	queue := make(chan string, len(urls))
@@ -290,12 +296,12 @@ func main() {
 	defer cancel()
 
 	startTime := time.Now()
-	fmt.Println("Start time for creating consumers:", startTime)
+	fmt.Println("start time for creating consumers:", startTime)
 
 	// Spin up multiple consumers
 	for i := 0; i < *numConsumers; i++ {
 		wg.Add(1)
-		go consumer(ctx, queue, &wg, sharedCounter)
+		go consumer(ctx, queue, &wg, sharedCounter, *essaySplit)
 	}
 
 	// Wait for all consumers to finish
@@ -319,7 +325,7 @@ func main() {
 	// If you want to use the flag to see errors
 	// TODO: explan functionality to put back the urls that wasn't processed in the queue
 	if *errorReporter {
-		fmt.Println("Errors:", sharedCounter.ErrorReporter)
+		fmt.Println("errors:", sharedCounter.ErrorReporter)
 	}
 
 }
