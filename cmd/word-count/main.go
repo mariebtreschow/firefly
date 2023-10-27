@@ -18,6 +18,7 @@ import (
 
 	"github.com/peterbourgon/ff"
 	"golang.org/x/net/http2"
+	"golang.org/x/time/rate"
 )
 
 type ErrorReporter struct {
@@ -31,6 +32,7 @@ type WordCounter struct {
 	Counter          map[string]int
 	WordBank         map[string]bool
 	ErrorReporter    []ErrorReporter
+	RateLimiter      *rate.Limiter
 	ConcurrencyLimit int
 }
 
@@ -39,10 +41,11 @@ type WordCount struct {
 	Count int
 }
 
-func NewWordCounter(concurrencyLimit int, httpClient *http.Client) *WordCounter {
+func NewWordCounter(concurrencyLimit int, httpClient *http.Client, rateLimiter *rate.Limiter) *WordCounter {
 	return &WordCounter{
 		Sync:             &sync.Mutex{},
 		Client:           httpClient,
+		RateLimiter:      rateLimiter,
 		Counter:          make(map[string]int),
 		WordBank:         make(map[string]bool),
 		ConcurrencyLimit: concurrencyLimit,
@@ -118,6 +121,13 @@ func (W *WordCounter) sortByCount(m map[string]int) []WordCount {
 
 func (W *WordCounter) CountWordsFromURL(ctx context.Context, url string) error {
 	fmt.Println("counting words from URL:", url)
+
+	// Wait for a token. This will block until a token becomes available
+	// or the context is cancelled.
+	if err := W.RateLimiter.Wait(ctx); err != nil {
+		return err
+	}
+
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return fmt.Errorf("error creating request for url %s: %w", url, err)
@@ -189,6 +199,12 @@ func consumer(ctx context.Context, queue <-chan string, wg *sync.WaitGroup, shar
 		// Word count logic
 		err := sharedCounter.CountWordsFromURL(ctx, url)
 		if err != nil {
+			// Add to error reporter
+			// TODO: add functionality to put on a deadletter queue
+			sharedCounter.Sync.Lock() // Locking the mutex
+			sharedCounter.ErrorReporter = append(sharedCounter.ErrorReporter, ErrorReporter{url, err})
+			sharedCounter.Sync.Unlock() // Unlocking the mutex
+			fmt.Println("Error counting words:", err)
 			//  TODO: improve error handling
 			if err == context.DeadlineExceeded {
 				fmt.Println("context deadline exceeded")
@@ -200,12 +216,7 @@ func consumer(ctx context.Context, queue <-chan string, wg *sync.WaitGroup, shar
 				wg.Done()
 				return
 			}
-			// Add to error reporter
-			// TODO: add functionality to put on a deadletter queue
-			sharedCounter.Sync.Lock() // Locking the mutex
-			sharedCounter.ErrorReporter = append(sharedCounter.ErrorReporter, ErrorReporter{url, err})
-			sharedCounter.Sync.Unlock() // Unlocking the mutex
-			fmt.Println("Error counting words:", err)
+
 		}
 
 		// TODO: add a rate limiter instead
@@ -229,7 +240,7 @@ func main() {
 		timeout          = fs.Duration("timeout", 120*time.Second, "HTTP client timeout")
 		globalTimeout    = fs.Duration("global_timeout", 500*time.Second, "Global context timeout for operation of all processing URLs")
 		wordBankUrl      = fs.String("word_bank_url", "https://raw.githubusercontent.com/dwyl/english-words/master/words.txt", "Word bank URL")
-		essaysPath       = fs.String("essays_path", "./resources/endg-urls-copy.txt", "Path to essays")
+		essaysPath       = fs.String("essays_path", "./resources/endg-urls.txt", "Path to essays")
 		concurrencyLimit = fs.Int("concurrency_limit", 50, "Concurrency limit")
 		numConsumers     = fs.Int("num_consumers", 40, "Number of consumers")
 		errorReporter    = fs.Bool("error_reporting", false, "Display errors in the end")
@@ -262,10 +273,13 @@ func main() {
 	// Upgrade it to HTTP/2
 	http2.ConfigureTransport(httpTransport)
 
+	// Rate limiter
+	r := rate.NewLimiter(rate.Every(time.Second), *concurrencyLimit)
+
 	sharedCounter := NewWordCounter(*concurrencyLimit, &http.Client{
 		Transport: httpTransport,
 		Timeout:   *timeout,
-	})
+	}, r)
 
 	// Load bank words from url, and store in memory
 	bankOfWords, err := sharedCounter.LoadBankWord(*wordBankUrl)
@@ -337,7 +351,7 @@ func main() {
 	// Print the pretty JSON string
 	fmt.Println(string(prettyJSON))
 
-	fmt.Println("time taken to process", len(urls), "URLs:", time.Since(startTime))
+	fmt.Println("time taken to process", len(urls)+1, "URLs:", time.Since(startTime))
 
 	// If you want to use the flag to see errors
 	// TODO: explan functionality to put back the urls that wasn't processed in the queue

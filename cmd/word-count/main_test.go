@@ -6,10 +6,12 @@ import (
 	"net/http/httptest"
 	"testing"
 	"time"
+
+	"golang.org/x/time/rate"
 )
 
 func TestIsValidWord(t *testing.T) {
-	w := NewWordCounter(10, &http.Client{})
+	w := NewWordCounter(10, &http.Client{}, &rate.Limiter{})
 	if !w.isValidWord("apple") {
 		t.Error("Expected 'apple' to be a valid word")
 	}
@@ -24,7 +26,7 @@ func TestIsValidWord(t *testing.T) {
 }
 
 func TestSortByCount(t *testing.T) {
-	w := NewWordCounter(10, &http.Client{})
+	w := NewWordCounter(10, &http.Client{}, &rate.Limiter{})
 	w.Counter = map[string]int{"apple": 2, "banana": 1, "cherry": 3}
 	sortedWords := w.sortByCount(w.Counter)
 	if len(sortedWords) != 3 {
@@ -46,7 +48,7 @@ func TestCountWordsFromURL(t *testing.T) {
 	// Setup your WordCounter
 	wordCounter := NewWordCounter(1, &http.Client{
 		Timeout: 1 * time.Second,
-	})
+	}, &rate.Limiter{})
 
 	// Load your word bank
 	// Here you might want to directly set the word bank for the test
