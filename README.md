@@ -14,20 +14,22 @@ Output is in pretty json and written to the stdout.
 ## Build a Docker image and run from the command line
 
 Please see Makefile for build command
-    `make docker-build`
+
+`make docker-build`
 
 ## How to run locally
 
- install dependencies
-    `go mod download`
+Install dependencies
 
- run locally with default flags on test data
-    `go run cmd/word-count/main.go`
+`go mod download`
+
+Run locally with default flags
+
+`go run cmd/word-count/main.go`
 
 ## How to run the docker
 
 `docker run -e TIMEOUT=60 -e GLOABL_TIMEOUT=120 -e CONCURRENCY_LIMIT=40 -e NUM_CONSUMERS=10 -d wordcounter`
-
 
 optional flags:
 
@@ -38,7 +40,11 @@ optional flags:
 - concurrency_limit
 - num_consumers
 
-## Challenges of this application
+## Run tests
+
+From root folder:
+
+`go test firefly.ai/word-counter/cmd/word-count`
 
 
 
@@ -48,45 +54,3 @@ optional flags:
 
 
 
-
-Speed Enhancements
-Optimized Text Parsing: Instead of splitting strings using strings.Fields, you could use more efficient text scanning libraries or algorithms optimized for your specific case.
-
-Parallelize File Reading: If your file of URLs is large, you could parallelize reading it into memory.
-
-Batch Processing: Instead of sending one URL at a time to the queue, you could batch multiple URLs and send them together to the consumer.
-
-Load Balancing among Consumers: Create a more advanced load-balancing mechanism between consumers based on their current workload.
-
-Caching: Cache results for URLs or words that have already been processed.
-
-HTTP/2: If the server supports it, make sure your HTTP client is configured to use HTTP/2, which could speed up the requests.
-
-Connection Pooling: Reuse HTTP client connections to avoid the overhead of establishing a new connection for each request.
-
-Async IO: Consider using asynchronous IO for network and disk operations.
-
-Quality Enhancements
-Error Handling: Add more robust error handling and retries for network failures.
-
-Logging: Add logging at various stages to debug and trace the flow easily.
-
-Metrics: Add metrics to measure queue lengths, processing times, etc., for better observability.
-
-Rate Limiting: Implement rate limiting to avoid hitting rate limits on the server hosting the word list or the URLs you're fetching.
-
-Timeouts: Implement more fine-grained timeout control for different stages of the processing.
-
-Code Modularization: The main function is doing a lot of work. It would be good to break it down into smaller functions to improve readability and maintainability.
-
-Testing: Add unit tests and integration tests.
-
-Documentation: Add comments and documentation to describe the purpose and workings of each function, as well as the overall architecture of your program.
-
-Configurability: Rather than hard-coding settings like timeouts and concurrency limits, make these configurable through a config file or environment variables.
-
-Type Safety: For better type safety and potential performance improvements, consider using slices and arrays instead of maps where the order of elements matters.
-
-Profiling: Use Go's built-in profiling tools to identify bottlenecks and further optimize the code.
-
-Improving both speed and quality usually involves trade-offs, so you'll need to prioritize based on your specific needs.

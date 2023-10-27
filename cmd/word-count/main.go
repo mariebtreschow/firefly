@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"sort"
 	"strings"
@@ -155,10 +156,20 @@ func (W *WordCounter) CountWordsFromURL(ctx context.Context, url string) error {
 	return nil
 }
 
+func isValidURL(testURL string) bool {
+	u, err := url.Parse(testURL)
+	return err == nil && u.Scheme != "" && u.Host != ""
+}
+
 // Producer
 func producer(queue chan<- string, urls []string) {
 	for _, url := range urls {
-		queue <- url
+		// TODO: check if url is already in the queue
+		if isValidURL(url) {
+			queue <- url
+		} else {
+			fmt.Println("Invalid URL:", url)
+		}
 	}
 	close(queue)
 }
@@ -173,10 +184,11 @@ func consumer(ctx context.Context, queue <-chan string, wg *sync.WaitGroup, shar
 		// Word count logic
 		err := sharedCounter.CountWordsFromURL(ctx, url)
 		if err != nil {
-			// add to error reporter
+			// Add to error reporter
+			sharedCounter.Sync.Lock() // Locking the mutex
 			sharedCounter.ErrorReporter = append(sharedCounter.ErrorReporter, ErrorReporter{url, err})
+			sharedCounter.Sync.Unlock() // Unlocking the mutex
 			fmt.Println("Error counting words:", err)
-			continue
 		}
 
 		// Ensures that the global counter variable is accessed by one goroutine at a time, making it thread-safe.
@@ -194,6 +206,8 @@ func consumer(ctx context.Context, queue <-chan string, wg *sync.WaitGroup, shar
 func main() {
 
 	fs := flag.NewFlagSet("wordcounter", flag.ExitOnError)
+
+	fs.Parse(os.Args[1:])
 
 	var (
 		timeout          = fs.Duration("timeout", 120*time.Second, "HTTP client timeout")
