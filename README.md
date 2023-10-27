@@ -42,8 +42,9 @@ and include it when you run command can be found in Makefile.
 
 ## How to run the docker
 
-`docker run wordcounter:1.0.0`
+`docker run wordcounter:{tag}`
 
+Switch out tag for the tag you built with
 
 ## Run tests
 
