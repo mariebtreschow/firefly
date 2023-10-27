@@ -186,6 +186,7 @@ func consumer(ctx context.Context, queue <-chan string, wg *sync.WaitGroup, shar
 		err := sharedCounter.CountWordsFromURL(ctx, url)
 		if err != nil {
 			// Add to error reporter
+			// TODO: add functionality to put on a deadletter queue
 			sharedCounter.Sync.Lock() // Locking the mutex
 			sharedCounter.ErrorReporter = append(sharedCounter.ErrorReporter, ErrorReporter{url, err})
 			sharedCounter.Sync.Unlock() // Unlocking the mutex
