@@ -26,7 +26,8 @@ Please see Makefile for build command
 
 ## How to run the docker
 
-`docker run -e TIMEOUT=60 -e GLOABL_TIMEOUT=120 -e CONCURRENCY_LIMIT=50 -e NUM_CONSUMERS=1000 -d wordcounter`
+`docker run -e TIMEOUT=60 -e GLOABL_TIMEOUT=120 -e CONCURRENCY_LIMIT=40 -e NUM_CONSUMERS=10 -d wordcounter`
+
 
 optional flags:
 
@@ -39,11 +40,7 @@ optional flags:
 
 ## Challenges of this application
 
-With such a large workload, it's important to manage system resources efficiently. 
 
-You can do this through:
-- Worker Pools: Limit the number of goroutines that are active at any given time.
-- Buffered Channels: Use buffered channels to manage the work queue.
 
 
 

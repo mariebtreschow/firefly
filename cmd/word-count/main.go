@@ -63,7 +63,7 @@ func isAlphabetic(s string) bool {
 // we want to load it every time the program starts: because we do not know if it has changed
 // TODO: make alternative where we cache the words
 func (W *WordCounter) LoadBankWord(url string) (map[string]bool, error) {
-	fmt.Println("Loading words from url", url)
+	fmt.Println("loading words from url", url)
 	resp, err := W.Client.Get(url)
 	if err != nil {
 		return nil, err
@@ -115,7 +115,7 @@ func (W *WordCounter) sortByCount(m map[string]int) []WordCount {
 }
 
 func (W *WordCounter) CountWordsFromURL(ctx context.Context, url string) error {
-	fmt.Println("Counting words from URL:", url)
+	fmt.Println("counting words from URL:", url)
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return fmt.Errorf("error creating request for url %s: %w", url, err)
@@ -133,7 +133,7 @@ func (W *WordCounter) CountWordsFromURL(ctx context.Context, url string) error {
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		fmt.Println("Error:", err)
+		fmt.Println("error reading response body:", err)
 		return err
 	}
 
@@ -163,6 +163,10 @@ func producer(queue chan<- string, urls []string) {
 	close(queue)
 }
 
+// Program paus after 5000 urls
+var globalCounter int
+var globalCounterMutex sync.Mutex
+
 // Consumer
 func consumer(ctx context.Context, queue <-chan string, wg *sync.WaitGroup, sharedCounter *WordCounter) {
 	for url := range queue {
@@ -174,6 +178,15 @@ func consumer(ctx context.Context, queue <-chan string, wg *sync.WaitGroup, shar
 			fmt.Println("Error counting words:", err)
 			continue
 		}
+
+		// Ensures that the global counter variable is accessed by one goroutine at a time, making it thread-safe.
+		globalCounterMutex.Lock()
+		globalCounter++
+		if globalCounter >= 2000 {
+			time.Sleep(20 * time.Second) // Pause
+			globalCounter = 0            // Reset the counter
+		}
+		globalCounterMutex.Unlock()
 	}
 	wg.Done()
 }
@@ -183,26 +196,22 @@ func main() {
 	fs := flag.NewFlagSet("wordcounter", flag.ExitOnError)
 
 	var (
-		timeout          = fs.Duration("timeout", 90*time.Second, "HTTP client timeout")
-		globalTimeout    = fs.Duration("global_timeout", 120*time.Second, "Global context timeout for operation of all processing URLs")
+		timeout          = fs.Duration("timeout", 120*time.Second, "HTTP client timeout")
+		globalTimeout    = fs.Duration("global_timeout", 10*time.Minute, "Global context timeout for operation of all processing URLs")
 		wordBankUrl      = fs.String("word_bank_url", "https://raw.githubusercontent.com/dwyl/english-words/master/words.txt", "Word bank URL")
-		essaysPath       = fs.String("essays_path", "./resources/endg-urls-copy.txt", "Path to essays")
-		concurrencyLimit = fs.Int("concurrency_limit", 50, "Concurrency limit")
-		numConsumers     = fs.Int("num_consumers", 50, "Number of consumers")
+		essaysPath       = fs.String("essays_path", "./resources/endg-urls.txt", "Path to essays")
+		concurrencyLimit = fs.Int("concurrency_limit", 40, "Concurrency limit")
+		numConsumers     = fs.Int("num_consumers", 20, "Number of consumers")
+		errorReporter    = fs.Bool("error_reporting", false, "Display errors in the end")
 	)
 
 	if *timeout > *globalTimeout {
-		fmt.Println("Timeout cannot be greater than global timeout")
-		return
-	}
-
-	if *concurrencyLimit > *numConsumers {
-		fmt.Println("Concurrency limit cannot be greater than number of consumers")
+		fmt.Println("timeout cannot be greater than global timeout")
 		return
 	}
 
 	if *numConsumers > 100 {
-		fmt.Println("Number of consumers cannot be greater than 1000")
+		fmt.Println("number of consumers cannot be greater than 100")
 		return
 	}
 
@@ -224,12 +233,12 @@ func main() {
 	// Load bank words from url, and store in memory
 	bankOfWords, err := sharedCounter.LoadBankWord(*wordBankUrl)
 	if err != nil {
-		fmt.Println("Error loading words:", err)
+		fmt.Println("error loading words:", err)
 		return
 	}
 
 	if len(bankOfWords) == 0 {
-		fmt.Println("Error: no words found")
+		fmt.Println("error: no words found")
 		return
 	}
 	sharedCounter.WordBank = bankOfWords
@@ -237,7 +246,7 @@ func main() {
 	// Open the file and push the messages to the consumers
 	file, err := os.Open(*essaysPath)
 	if err != nil {
-		fmt.Printf("Error opening file %v", err)
+		fmt.Printf("error opening file %v", err)
 		return
 	}
 	defer file.Close()
@@ -284,12 +293,19 @@ func main() {
 	// Convert the array of maps to a pretty JSON string
 	prettyJSON, err := json.MarshalIndent(mostUsedWords, "", "  ")
 	if err != nil {
-		fmt.Println("Failed to generate json", err)
+		fmt.Println("failed to generate json", err)
 		return
 	}
 
 	// Print the pretty JSON string
 	fmt.Println(string(prettyJSON))
-	// fmt.Println("Errors:", sharedCounter.ErrorReporter)
-	fmt.Println("Time taken to process", len(urls), "URLs:", time.Since(startTime))
+
+	fmt.Println("time taken to process", len(urls), "URLs:", time.Since(startTime))
+
+	// If you want to use the flag to see errors
+	// TODO: explan functionality to put back the urls that wasn't processed in the queue
+	if *errorReporter {
+		fmt.Println("Errors:", sharedCounter.ErrorReporter)
+	}
+
 }
