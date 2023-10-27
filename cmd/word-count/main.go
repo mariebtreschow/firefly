@@ -208,6 +208,7 @@ func consumer(ctx context.Context, queue <-chan string, wg *sync.WaitGroup, shar
 			fmt.Println("Error counting words:", err)
 		}
 
+		// TODO: add a rate limiter instead
 		// Ensures that the global counter variable is accessed by one goroutine at a time, making it thread-safe.
 		globalCounterMutex.Lock()
 		globalCounter++
