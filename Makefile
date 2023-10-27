@@ -10,7 +10,7 @@ BUILD_CONTEXT=.
 # Dockerfile location
 DOCKERFILE_PATH=./Dockerfile
 
-.PHONY: docker-build docker-run
+.PHONY: docker-build
 
 docker-build:
 	@docker build -t $(IMAGE_NAME):$(TAG) -f $(DOCKERFILE_PATH) $(BUILD_CONTEXT)
