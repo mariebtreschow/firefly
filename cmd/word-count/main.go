@@ -139,6 +139,10 @@ func (W *WordCounter) CountWordsFromURL(ctx context.Context, url string) error {
 		return err
 	}
 
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("error response status code %d", resp.StatusCode)
+	}
+
 	// TODO: make this faster by using binary search
 	localCounter := make(map[string]int)
 	for _, word := range strings.Fields(string(body)) {
@@ -185,6 +189,17 @@ func consumer(ctx context.Context, queue <-chan string, wg *sync.WaitGroup, shar
 		// Word count logic
 		err := sharedCounter.CountWordsFromURL(ctx, url)
 		if err != nil {
+			//  TODO: improve error handling
+			if err == context.DeadlineExceeded {
+				fmt.Println("context deadline exceeded")
+				wg.Done()
+				return
+			}
+			if err.Error() == "error response status code 999" {
+				fmt.Println("overloading the domain")
+				wg.Done()
+				return
+			}
 			// Add to error reporter
 			// TODO: add functionality to put on a deadletter queue
 			sharedCounter.Sync.Lock() // Locking the mutex
