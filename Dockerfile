@@ -13,9 +13,6 @@ RUN go mod download
 # Copy the source code into the container
 COPY . .
 
-# Optional: Set environment variables
-ARG WORD_BANK_PATH
-
 # Build the application
 RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o main ./cmd/word-count
 
