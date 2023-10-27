@@ -42,15 +42,13 @@ and include it when you run command can be found in Makefile.
 
 ## How to run the docker
 
-`docker run wordcounter:{tag}`
+`make docker-run`
 
 Switch out tag for the tag you built with
 
 ## Run tests
 
-From root folder:
-
-`go test firefly.ai/word-counter/cmd/word-count`
+`make tests`
 
 
 

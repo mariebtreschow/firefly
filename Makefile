@@ -1,3 +1,6 @@
+#!make
+include .env
+
 # Name of the Docker image
 IMAGE_NAME=wordcounter
 
@@ -13,10 +16,14 @@ BUILD_CONTEXT=.
 # Dockerfile location
 DOCKERFILE_PATH=./Dockerfile
 
-.PHONY: docker-build
-
 docker-build:
 	@docker build -t $(IMAGE_NAME):$(TAG) -f $(DOCKERFILE_PATH) $(BUILD_CONTEXT)
 
+docker-run:
+	@docker run -it --rm $(IMAGE_NAME):$(TAG)
+
 wordcounter:
-	@env $(shell grep -v '^#' .env | xargs) go run cmd/$(BINARY_NAME)/main.go
+	go run cmd/$(BINARY_NAME)/main.go
+
+tests:
+	go test -v ./...
