@@ -7,6 +7,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
 	"os"
@@ -183,6 +184,9 @@ func producer(queue chan<- string, urls []string) {
 var globalCounter int
 var globalCounterMutex sync.Mutex
 
+// Global Context cancel function, to be called when you want to shut down all operations
+var cancelFunc context.CancelFunc
+
 // Consumer
 func consumer(ctx context.Context, queue <-chan string, wg *sync.WaitGroup, sharedCounter *WordCounter, split int) {
 	for url := range queue {
@@ -196,19 +200,18 @@ func consumer(ctx context.Context, queue <-chan string, wg *sync.WaitGroup, shar
 			sharedCounter.Sync.Unlock() // Unlocking the mutex
 			fmt.Println("error counting words:", err)
 			//  TODO: improve error handling
+			// Handle specific errors
 			if err == context.DeadlineExceeded {
 				fmt.Println("context deadline exceeded, try increasing the timeout")
-				return
-			}
-			if err.Error() == "error response status code 999" {
-				fmt.Println("overloading the domain")
-				os.Exit(1)
-				return
+			} else if err.Error() == "error response status code 999" {
+				log.Println("overloading the domain. initiating graceful shutdown.")
+				cancelFunc() // Call the cancel function to cancel the global context
+				break        // Exit the loop
 			}
 
 		}
 
-		// TODO: add a rate limiter instead
+		// TODO: add a rate limiter?
 		// Ensures that the global counter variable is accessed by one goroutine at a time, making it thread-safe.
 		globalCounterMutex.Lock()
 		globalCounter++
