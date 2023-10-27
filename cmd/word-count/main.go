@@ -184,11 +184,11 @@ func main() {
 
 	var (
 		timeout          = fs.Duration("timeout", 90*time.Second, "HTTP client timeout")
-		globalTimeout    = fs.Duration("global_timeout", 120*time.Second, "Global context timeout")
+		globalTimeout    = fs.Duration("global_timeout", 120*time.Second, "Global context timeout for operation of all processing URLs")
 		wordBankUrl      = fs.String("word_bank_url", "https://raw.githubusercontent.com/dwyl/english-words/master/words.txt", "Word bank URL")
 		essaysPath       = fs.String("essays_path", "./resources/endg-urls-copy.txt", "Path to essays")
 		concurrencyLimit = fs.Int("concurrency_limit", 50, "Concurrency limit")
-		numConsumers     = fs.Int("num_consumers", 100, "Number of consumers")
+		numConsumers     = fs.Int("num_consumers", 50, "Number of consumers")
 	)
 
 	if *timeout > *globalTimeout {
@@ -249,6 +249,7 @@ func main() {
 		if err != nil {
 			break
 		}
+		// TODO: validate url
 		urls = append(urls, strings.TrimSpace(line))
 	}
 
@@ -290,5 +291,5 @@ func main() {
 	// Print the pretty JSON string
 	fmt.Println(string(prettyJSON))
 	// fmt.Println("Errors:", sharedCounter.ErrorReporter)
-	fmt.Println("Time taken to process all URLs:", time.Since(startTime))
+	fmt.Println("Time taken to process", len(urls), "URLs:", time.Since(startTime))
 }
